@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebRTC Audio Streaming</title>
+</head>
+<body>
+    <h1>WebRTC Audio Streaming</h1>
+    <textarea id="text-input" placeholder="Enter text"></textarea><br>
+    <input type="number" id="temperature" placeholder="Temperature" step="0.01" min="0" max="1" value="0.3"><br>
+    <input type="number" id="top-p" placeholder="Top P" step="0.01" min="0" max="1" value="0.7"><br>
+    <input type="number" id="top-k" placeholder="Top K" min="1" max="20" value="20"><br>
+    <input type="number" id="audio-seed-input" placeholder="Audio Seed" value="2"><br>
+    <input type="number" id="text-seed-input" placeholder="Text Seed" value="42"><br>
+    <input type="checkbox" id="refine-text-flag"> Refine Text<br>
+    <input type="text" id="refine-text-prompt" placeholder="Refine Text Prompt" value="[oral_2][laugh_0][break_6]"><br>
+    <button id="start">Start</button>
+    <audio id="audio" controls></audio>
+
+    <script>
+        const startButton = document.getElementById('start');
+        const audioElement = document.getElementById('audio');
+
+        startButton.onclick = async () => {
+            const pc = new RTCPeerConnection();
+
+            pc.ontrack = (event) => {
+                const stream = new MediaStream();
+                stream.addTrack(event.track);
+                audioElement.srcObject = stream;
+                audioElement.play();
+            };
+
+            const dataChannel = pc.createDataChannel('data');
+
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+
+            const response = await fetch('/offer', {
+                method: 'POST',
+                body: JSON.stringify({
+                    sdp: pc.localDescription.sdp,
+                    type: pc.localDescription.type,
+                }),
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            });
+
+            const { sdp, type } = await response.json();
+            await pc.setRemoteDescription(new RTCSessionDescription({ sdp, type }));
+
+            dataChannel.onopen = () => {
+                const text = document.getElementById('text-input').value;
+                const temperature = parseFloat(document.getElementById('temperature').value);
+                const top_P = parseFloat(document.getElementById('top-p').value);
+                const top_K = parseInt(document.getElementById('top-k').value, 10);
+                const audio_seed_input = parseInt(document.getElementById('audio-seed-input').value, 10);
+                const text_seed_input = parseInt(document.getElementById('text-seed-input').value, 10);
+                const refine_text_flag = document.getElementById('refine-text-flag').checked;
+                const refine_text_prompt = document.getElementById('refine-text-prompt').value;
+
+                dataChannel.send(JSON.stringify({
+                    text,
+                    temperature,
+                    top_P,
+                    top_K,
+                    audio_seed_input,
+                    text_seed_input,
+                    refine_text_flag,
+                    refine_text_prompt,
+                }));
+            };
+        };
+    </script>
+</body>
+</html>

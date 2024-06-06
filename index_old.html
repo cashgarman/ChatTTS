@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebRTC Audio Streaming</title>
+</head>
+<body>
+    <h1>WebRTC Audio Streaming</h1>
+    <form id="audioForm">
+        <label for="text">Text:</label>
+        <input type="text" id="text" name="text" value="The quick brown fox[uv_break] jumps over the lazy dog.[uv_break][laugh]"><br><br>
+        <label for="temperature">Temperature:</label>
+        <input type="number" id="temperature" name="temperature" value="0.3" step="0.1"><br><br>
+        <label for="top_P">Top P:</label>
+        <input type="number" id="top_P" name="top_P" value="0.7" step="0.1"><br><br>
+        <label for="top_K">Top K:</label>
+        <input type="number" id="top_K" name="top_K" value="20"><br><br>
+        <label for="audio_seed">Audio Seed:</label>
+        <input type="number" id="audio_seed" name="audio_seed" value="2"><br><br>
+        <label for="text_seed">Text Seed:</label>
+        <input type="number" id="text_seed" name="text_seed" value="42"><br><br>
+        <label for="refine_text">Refine Text:</label>
+        <input type="checkbox" id="refine_text" name="refine_text"><br><br>
+        <label for="refine_text_prompt">Refine Text Prompt:</label>
+        <input type="text" id="refine_text_prompt" name="refine_text_prompt" value="[oral_2][laugh_0][break_6]"><br><br>
+        <button type="button" onclick="startStreaming()">Start Streaming</button>
+    </form>
+    <audio id="audioPlayer" controls></audio>
+
+    <script>
+        async function startStreaming() {
+            console.log("Starting streaming...");
+            const form = document.getElementById('audioForm');
+            const formData = new FormData(form);
+            const data = {};
+            formData.forEach((value, key) => {
+                if (key === 'refine_text') {
+                    data[key] = value === 'on';
+                } else {
+                    data[key] = value;
+                }
+            });
+            console.log("Form data collected:", data);
+
+            const pc = new RTCPeerConnection();
+            const channel = pc.createDataChannel('chat');
+            console.log("RTCPeerConnection and DataChannel created.");
+
+            pc.onicecandidate = event => {
+                if (event.candidate) {
+                    console.log("ICE candidate:", event.candidate);
+                    websocket.send(JSON.stringify({ candidate: event.candidate }));
+                }
+            };
+
+            pc.ontrack = event => {
+                console.log("Track event received:", event);
+                const audioPlayer = document.getElementById('audioPlayer');
+                audioPlayer.srcObject = event.streams[0];
+                audioPlayer.play();
+            };
+
+            const websocket = new WebSocket('ws://llm.xaeon.io:8080/ws');
+            websocket.onopen = async () => {
+                console.log("WebSocket connection opened.");
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                console.log("Local SDP set:", offer);
+                websocket.send(JSON.stringify({ sdp: offer.sdp, type: offer.type }));
+            };
+
+            websocket.onclose = () => {
+                console.log("WebSocket connection closed.");
+            };
+
+            websocket.onmessage = async event => {
+                const message = JSON.parse(event.data);
+                if (message.sdp) {
+                    await pc.setRemoteDescription(new RTCSessionDescription(message));
+                    console.log("Remote SDP set:", message);
+                } else if (message.candidate) {
+                    await pc.addIceCandidate(message.candidate);
+                    console.log("ICE candidate added:", message.candidate);
+                } else if (message.audio) {
+                    console.log("Audio frame received:", message.audio);
+                } else if (message.done) {
+                    console.log("Streaming done.");
+                } else {
+                    console.log("Unknown message received:", message);
+                }
+            };
+
+            channel.onopen = () => {
+                console.log("DataChannel opened.");
+                channel.send(JSON.stringify(data));
+                console.log("Data sent through DataChannel:", data);
+            };
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebRTC Audio Stream</title>
+</head>
+<body>
+    <h1>WebRTC Audio Stream</h1>
+    <button id="startButton">Start</button>
+    <script>
+        const startButton = document.getElementById('startButton');
+
+        startButton.addEventListener('click', async () => {
+            const pc = new RTCPeerConnection();
+
+            pc.ontrack = (event) => {
+                const audioElement = new Audio();
+                audioElement.srcObject = event.streams[0];
+                audioElement.play();
+            };
+
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+
+            const response = await fetch('/offer', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(pc.localDescription)
+            });
+            const answer = await response.json();
+            await pc.setRemoteDescription(answer);
+        });
+    </script>
+</body>
+</html>
